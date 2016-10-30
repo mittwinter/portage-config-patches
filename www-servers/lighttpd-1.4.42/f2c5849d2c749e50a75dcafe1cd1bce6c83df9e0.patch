@@ -1,0 +1,55 @@
+From f2c5849d2c749e50a75dcafe1cd1bce6c83df9e0 Mon Sep 17 00:00:00 2001
+From: Glenn Strauss <gstrauss@gluelogic.com>
+Date: Wed, 26 Oct 2016 16:28:25 -0400
+Subject: [core] fix fd leak when using libev
+
+server.event-handler = "libev" would leak fds after the change made
+in commit:40f16d5 since fdevent_libev.c:fdevent_libev_poll() always
+returned 0 ready events after handling the event callbacks itself.
+Therefore, fdevent_libev.c:fdevent_libev_poll() must also call
+fdevent_sched_run() to handled fds scheduled to be closed.
+
+This bug was introduced in 1.4.42.
+
+(thx mittwinter for troubleshooting and identifying problem)
+
+Note: server.event-handler = "libev" is no longer recommended.
+lighttpd provides event handlers optimized for modern systems for most
+platforms, and the limited way that lighttpd uses libev does not provide
+any advantages over the OS-specific optimized event handlers.
+
+diff --git a/src/fdevent_libev.c b/src/fdevent_libev.c
+index 549e3cb..47f8116 100644
+--- a/src/fdevent_libev.c
++++ b/src/fdevent_libev.c
+@@ -12,15 +12,17 @@
+ 
+ static void io_watcher_cb(struct ev_loop *loop, ev_io *w, int revents) {
+ 	fdevents *ev = w->data;
+-	fdnode *fdn = ev->fdarray[w->fd];
++	fdevent_handler handler = fdevent_get_handler(ev, w->fd);
++	void *context = fdevent_get_context(ev, w->fd);
+ 	int r = 0;
+ 	UNUSED(loop);
++	if (NULL == handler) return;
+ 
+ 	if (revents & EV_READ) r |= FDEVENT_IN;
+ 	if (revents & EV_WRITE) r |= FDEVENT_OUT;
+ 	if (revents & EV_ERROR) r |= FDEVENT_ERR;
+ 
+-	switch (r = (*fdn->handler)(ev->srv, fdn->ctx, r)) {
++	switch (r = (*handler)(ev->srv, context, r)) {
+ 	case HANDLER_FINISHED:
+ 	case HANDLER_GO_ON:
+ 	case HANDLER_WAIT_FOR_EVENT:
+@@ -98,6 +100,7 @@ static int fdevent_libev_poll(fdevents *ev, int timeout_ms) {
+ 
+ 	ev_timer_again(ev->libev_loop, &timeout_watcher);
+ 	ev_run(ev->libev_loop, EVRUN_ONCE);
++	fdevent_sched_run(ev->srv, ev);
+ 
+ 	return 0;
+ }
+-- 
+cgit v0.10.2
+

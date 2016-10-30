@@ -1,0 +1,19 @@
+--- protocols/twitter/twitter_lib.c-orig	2013-01-07 00:41:11.000000000 +0100
++++ protocols/twitter/twitter_lib.c	2013-01-28 15:13:23.000000000 +0100
+@@ -561,14 +561,14 @@
+ 				continue;
+ 			
+ 			const char *kort = json_o_str(v->u.array.values[i], "url");
+-			const char *disp = json_o_str(v->u.array.values[i], "display_url");
++			const char *disp = json_o_str(v->u.array.values[i], "expanded_url");
+ 			char *pos, *new;
+ 			
+ 			if (!kort || !disp || !(pos = strstr(text, kort)))
+ 				continue;
+ 			
+ 			*pos = '\0';
+-			new = g_strdup_printf("%s%s <%s>%s", text, kort,
++			new = g_strdup_printf("%s%s%s", text,
+ 			                      disp, pos + strlen(kort));
+ 			
+ 			g_free(text);
